@@ -31,7 +31,7 @@ credentials, and tenant resource queries.
    tenant namespace as Secrets
 5. Grammateus generates a webhook secret and stores it in the tenant namespace.
    Tenant configures git webhooks on their repositories with this secret to send
-   push events to the webhook server.
+   push events to [pharos](https://github.com/katastroma/pharos).
 
 All resources grammateus creates — namespace, ServiceAccount, ClusterRole,
 ClusterRoleBinding, Secrets — are labeled with the tenant
@@ -87,9 +87,9 @@ separate webhook in the git provider. Multiple tenants can watch the same repo
 through separate webhooks with separate secrets.
 
 When a push occurs, the git provider fires all webhooks configured on the repo.
-Each webhook hits the webhook server with its own HMAC signature. The webhook
-server verifies each signature independently, identifying the tenant and their
-registered revision + path.
+Each webhook hits [pharos](https://github.com/katastroma/pharos) with its own
+HMAC signature. Pharos verifies each signature independently through
+grammateus, identifying the tenant and their registered revision + path.
 
 Tenants consume all dependencies through their own repo (or a shared repo with a
 distinct path/revision). Third-party charts, external resources — everything is
@@ -120,16 +120,18 @@ as Kubernetes Secrets in the tenant namespace.
 ## GitOps Pipeline
 
 1. Git push → git provider fires all webhooks configured on the repo
-2. Webhook server receives an event with HMAC-SHA256 signature
-3. Webhook server asks grammateus to verify the signature and return the tenant
+2. [Pharos](https://github.com/katastroma/pharos) receives an event with
+   HMAC-SHA256 signature
+3. Pharos asks grammateus to verify the signature and return the tenant
    identity, registered revision, path, and repo credentials
-4. Webhook server determines if the push affects the tenant's registered
-   revision and path — skips if not
-5. Webhook server calls [orpheus](https://github.com/katastroma/orpheus)
-   (resolver) — retrieves the source, renders manifests
-6. Webhook server calls [histia](https://github.com/katastroma/histia)
-   (provisioner) — applies manifests to the cluster impersonating the tenant's
-   deployer SA, prunes resources no longer in the rendered output
+4. Pharos asks [phortizo](https://github.com/katastroma/phortizo) (retriever)
+   if the push affects the tenant's registered revision and path — skips if not
+5. Pharos calls phortizo to fetch the source
+6. Pharos calls [orpheus](https://github.com/katastroma/orpheus) (renderer) —
+   renders manifests from the source
+7. Pharos calls [histia](https://github.com/katastroma/histia) (provisioner) —
+   applies manifests to the cluster impersonating the tenant's deployer SA,
+   prunes resources no longer in the rendered output
 
 ## Tenant Isolation
 
@@ -205,9 +207,9 @@ isolation enforcement.
 1. Grammateus onboards tenant ACME → creates tenant-acme namespace,
    acme-deployer SA with ClusterRole, stores credentials. Gatekeeper's
    cluster-wide policy automatically enforces the acme-\* prefix.
-2. ACME pushes code → webhook fires → webhook server receives event → ... →
-   histia applies impersonating acme-deployer → resources labeled with tenant +
-   GitOps identity
+2. ACME pushes code → webhook fires → pharos receives event → ... → histia
+   applies impersonating acme-deployer → resources labeled with tenant + GitOps
+   identity
 3. GLOBEX's deployer tries to create resources in acme-prod → Gatekeeper rejects
    (globex-deployer prefix doesn't match acme-\*)
 
@@ -217,8 +219,9 @@ isolation enforcement.
 CLUSTER
   ├── platform namespace
   │   ├── grammateus (tenant API server)
-  │   ├── webhook server (receives git events)
-  │   ├── orpheus (resolver — retrieves source, renders manifests)
+  │   ├── pharos (webhook server — receives git events)
+  │   ├── phortizo (retriever — fetches source)
+  │   ├── orpheus (renderer — renders manifests from source)
   │   ├── histia (provisioner — applies/prunes resources via impersonation)
   │   └── gatekeeper (admission control)
   │
