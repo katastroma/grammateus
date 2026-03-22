@@ -5,11 +5,28 @@ Tenant management API server for [katastroma](https://github.com/katastroma).
 Manages tenant namespaces, their hierarchy, service accounts, repository
 credentials, and tenant resource queries.
 
+## Multi-Cluster
+
+**Open issue:** Should be a straightforward solve but may have to track
+ClusterIdentity alongside the repo credential for a given GitOps identity.
+
+The architecture explained here should support this - during tenant onboarding,
+the tenant will provide what cluster a particular GitOps identity should install
+resources to and provide access to that cluster.
+
+This would likely require bringing up the GitOps services (pharos, phortizo,
+orpheus, and histia) to those clusters before hand(?). Otherwise tenant
+onboarding could possibly do it given sufficient access/permissions.
+
+Once those prerequisites are installed, provisioning to that cluster for that
+GitOps identity is just a matter of passing the ClusterIdentity (cluster server
+and credentials) to histia for it to provision.
+
 ## Multi-Tenancy
 
 ### Authentication
 
-**TODO:** Auth architecture needs its own document. Key considerations:
+**Open issue:** Auth architecture needs its own document. Key considerations:
 
 - Initial tenant onboarding sets up tenant auth (IdP integration, tokens, etc.)
 - Parent tenant auth can create child tenants (sub-tenant scoping)
@@ -34,9 +51,9 @@ credentials, and tenant resource queries.
    push events to [pharos](https://github.com/katastroma/pharos).
 
 All resources grammateus creates — namespace, ServiceAccount, ClusterRole,
-ClusterRoleBinding, Secrets — are labeled with the tenant
-identity. This allows histia to find and prune all tenant resources (including
-cluster-scoped ones) during offboarding.
+ClusterRoleBinding, Secrets — are labeled with the tenant identity. This allows
+histia to find and prune all tenant resources (including cluster-scoped ones)
+during offboarding.
 
 ### Offboarding
 
@@ -88,8 +105,8 @@ through separate webhooks with separate secrets.
 
 When a push occurs, the git provider fires all webhooks configured on the repo.
 Each webhook hits [pharos](https://github.com/katastroma/pharos) with its own
-HMAC signature. Pharos verifies each signature independently through
-grammateus, identifying the tenant and their registered revision + path.
+HMAC signature. Pharos verifies each signature independently through grammateus,
+identifying the tenant and their registered revision + path.
 
 Tenants consume all dependencies through their own repo (or a shared repo with a
 distinct path/revision). Third-party charts, external resources — everything is
@@ -124,8 +141,8 @@ as Kubernetes Secrets in the tenant namespace.
    HMAC-SHA256 signature
 3. Pharos asks grammateus to verify the signature and return the tenant
    identity, registered revision, path, and repo credentials
-4. Pharos asks [phortizo](https://github.com/katastroma/phortizo) (retriever)
-   if the push affects the tenant's registered revision and path — skips if not
+4. Pharos asks [phortizo](https://github.com/katastroma/phortizo) (retriever) if
+   the push affects the tenant's registered revision and path — skips if not
 5. Pharos calls phortizo to fetch the source
 6. Pharos calls [orpheus](https://github.com/katastroma/orpheus) (renderer) —
    renders manifests from the source
@@ -142,8 +159,8 @@ Histia provisions resources using native Kubernetes impersonation
 impersonates the tenant's deployer SA. The impersonated SA has a ClusterRole
 with `create`, `patch`, and `delete` on all resources, but Gatekeeper constrains
 where those permissions apply based on namespace prefix. Kubernetes RBAC
-escalation prevention ensures tenants cannot grant themselves broader permissions
-than their SA has.
+escalation prevention ensures tenants cannot grant themselves broader
+permissions than their SA has.
 
 ### Namespace Enforcement
 
