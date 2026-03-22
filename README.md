@@ -2,17 +2,17 @@
 
 Tenant management API server for [katastroma](https://github.com/katastroma).
 
-Manages tenant namespaces, their hierarchy, service accounts, repository
-credentials, and tenant resource queries.
+Manages tenant namespaces, their hierarchy, service accounts, webhook
+verification, and tenant resource queries.
 
 ## Multi-Cluster
 
 **Open issue:** Should be a straightforward solve but may have to track
-ClusterIdentity alongside the repo credential for a given GitOps identity.
+ClusterIdentity inside the tenant namespace.
 
 The architecture explained here should support this - during tenant onboarding,
-the tenant will provide what cluster a particular GitOps identity should install
-resources to and provide access to that cluster.
+the tenant will provide what cluster the platform should install resources to
+and provide access to that cluster.
 
 This would likely require bringing up the GitOps services (pharos, phortizo,
 orpheus, and histia) to those clusters before hand(?). Otherwise tenant
@@ -30,8 +30,8 @@ and credentials) to histia for it to provision.
 
 - Initial tenant onboarding sets up tenant auth (IdP integration, tokens, etc.)
 - Parent tenant auth can create child tenants (sub-tenant scoping)
-- All grammateus API operations (onboarding, offboarding, credential management,
-  child tenant creation, queries) are authenticated
+- All grammateus API operations (onboarding, offboarding, child tenant creation,
+  queries) are authenticated
 - The auth mechanism determines who can operate on which tenant namespaces
 
 ### Onboarding
@@ -44,16 +44,17 @@ and credentials) to histia for it to provision.
      (`*`). `create` and `patch` for SSA, `delete` for pruning. No read verbs.
    - A ClusterRoleBinding binding the SA to the ClusterRole.
    - Gatekeeper constrains where the SA can operate by prefix.
-4. Tenant provides repository credentials and grammateus stores them in the
-   tenant namespace as Secrets
-5. Grammateus generates a webhook secret and stores it in the tenant namespace.
+4. Grammateus generates a webhook secret and stores it in the tenant namespace.
    Tenant configures git webhooks on their repositories with this secret to send
    push events to [pharos](https://github.com/katastroma/pharos).
+5. Tenant registers gitops identities and repository credentials through
+   [phortizo](https://github.com/katastroma/phortizo).
 
 All resources grammateus creates — namespace, ServiceAccount, ClusterRole,
-ClusterRoleBinding, Secrets — are labeled with the tenant identity. This allows
-histia to find and prune all tenant resources (including cluster-scoped ones)
-during offboarding.
+ClusterRoleBinding, webhook secret — are labeled with the tenant identity.
+Resources phortizo creates (gitops identities, repo credentials) are also
+labeled with the tenant identity. This allows histia to find and prune all
+tenant resources (including cluster-scoped ones) during offboarding.
 
 ### Offboarding
 
@@ -96,22 +97,14 @@ Any SA a tenant provisions is isolated by three layers:
 3. RBAC escalation prevention — no SA can be granted broader permissions than
    the deployer SA that created it.
 
-### GitOps Identity
+### Webhook Verification
 
-A tenant's GitOps identity is repo URL + revision + path. The webhook secret is
-the authentication mechanism — unique per tenant, configured on the repo as a
-separate webhook in the git provider. Multiple tenants can watch the same repo
-through separate webhooks with separate secrets.
+Grammateus verifies webhook HMAC signatures and returns the tenant identity.
 
 When a push occurs, the git provider fires all webhooks configured on the repo.
 Each webhook hits [pharos](https://github.com/katastroma/pharos) with its own
-HMAC signature. Pharos verifies each signature independently through grammateus,
-identifying the tenant and their registered revision + path.
-
-Tenants consume all dependencies through their own repo (or a shared repo with a
-distinct path/revision). Third-party charts, external resources — everything is
-vendored or referenced in the tenant's source. The tenant's registered source is
-the single entry point.
+HMAC signature. Pharos verifies each signature through grammateus, identifying
+the tenant.
 
 ## Queries
 
@@ -122,27 +115,20 @@ tenant resource relationships) — this is an IdP/authorization concern (see
 
 Grammateus provides query endpoints for tenants to inspect their state:
 
-- Repository credentials registered for the tenant
-- Resources provisioned in the cluster for a given repo URL, revision, and path
+- Resources provisioned in the cluster for a given tenant
 - Namespace hierarchy and child tenants
 
 Resource queries are backed by authorization using label selectors against the
 cluster — no separate state or inventory tracking.
-
-## Repository Credentials
-
-Tenants provide repository credentials through the API. Credentials are stored
-as Kubernetes Secrets in the tenant namespace.
 
 ## GitOps Pipeline
 
 1. Git push → git provider fires all webhooks configured on the repo
 2. [Pharos](https://github.com/katastroma/pharos) receives an event with
    HMAC-SHA256 signature
-3. Pharos asks grammateus to verify the signature and return the tenant
-   identity, registered revision, path, and repo credentials
-4. Pharos asks [phortizo](https://github.com/katastroma/phortizo) (retriever) if
-   the push affects the tenant's registered revision and path — skips if not
+3. Pharos asks grammateus to verify the signature and return the tenant identity
+4. Pharos asks [phortizo](https://github.com/katastroma/phortizo) (retriever) to
+   match the push against registered gitops identities — skips if no match
 5. Pharos calls phortizo to fetch the source
 6. Pharos calls [orpheus](https://github.com/katastroma/orpheus) (renderer) —
    renders manifests from the source
@@ -214,15 +200,17 @@ Mitigation TBD.
 ### Resource Ownership
 
 Every tenant resource is labeled with the tenant identity. Resources provisioned
-by histia are additionally labeled with the source (repo URL, revision, path).
-These labels are the ownership record — used for pruning, querying, and
-isolation enforcement.
+by histia are additionally labeled with the platform labels
+([see `katartismos`](https://github.com/katastroma/katartismos)). These labels
+are the ownership record — used for pruning, querying, and isolation
+enforcement.
 
 ### Example Enforcement Flow
 
 1. Grammateus onboards tenant ACME → creates tenant-acme namespace,
-   acme-deployer SA with ClusterRole, stores credentials. Gatekeeper's
-   cluster-wide policy automatically enforces the acme-\* prefix.
+   acme-deployer SA with ClusterRole, webhook secret. ACME registers gitops
+   identities and credentials through phortizo. Gatekeeper's cluster-wide policy
+   automatically enforces the acme-\* prefix.
 2. ACME pushes code → webhook fires → pharos receives event → ... → histia
    applies impersonating acme-deployer → resources labeled with tenant + GitOps
    identity
@@ -250,19 +238,22 @@ CLUSTER
   │   └── ClusterRoleBinding: globex-deployer → SA tenant-globex/globex-deployer
   │
   ├── tenant-acme namespace (root tenant)
-  │   ├── ServiceAccount: acme-deployer
-  │   ├── Secret: repo-credentials
-  │   └── Secret: webhook-secret
+  │   ├── ServiceAccount: acme-deployer (grammateus)
+  │   ├── Secret: webhook-secret (grammateus)
+  │   ├── ConfigMap: gitops-identity (phortizo)
+  │   └── Secret: repo-credentials (phortizo)
   │
   ├── tenant-acme-dev namespace (child, ownerRef → tenant-acme)
-  │   ├── ServiceAccount: acme-dev-deployer
-  │   ├── Secret: repo-credentials
-  │   └── Secret: webhook-secret
+  │   ├── ServiceAccount: acme-dev-deployer (grammateus)
+  │   ├── Secret: webhook-secret (grammateus)
+  │   ├── ConfigMap: gitops-identity (phortizo)
+  │   └── Secret: repo-credentials (phortizo)
   │
   ├── tenant-globex namespace (root tenant)
-  │   ├── ServiceAccount: globex-deployer
-  │   ├── Secret: repo-credentials
-  │   └── Secret: webhook-secret
+  │   ├── ServiceAccount: globex-deployer (grammateus)
+  │   ├── Secret: webhook-secret (grammateus)
+  │   ├── ConfigMap: gitops-identity (phortizo)
+  │   └── Secret: repo-credentials (phortizo)
   │
   ├── acme-prod namespace (provisioned by histia from tenant manifests, impersonating acme-deployer)
   │   └── [acme's workload pods, services, etc.]
