@@ -2,8 +2,8 @@
 
 Tenant management API server for [katastroma](https://github.com/katastroma).
 
-Provisions tenant resources, manages tenant hierarchy, handles tenant source
-event verification, and tenant resource queries.
+Provisions tenant resources, manages tenant hierarchy, and tenant resource
+queries.
 
 ## Authentication
 
