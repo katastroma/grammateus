@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## 0.0.2 - 2026-03-26
+#### Bug Fixes
+- (**cd**) cog handles CD trigger - (465eb41) - Nathan Blair
+#### Documentation
+- grammateus is ONLY tenant management - (36a5af1) - Nathan Blair
+- move system architecture to platform docs - (3fa9777) - Nathan Blair
+- update grammateus responsibility as ONLY tenant operations - (a5e7e2a) - Nathan Blair
+- note open issue regarding multi-cluster - (4ba1021) - Nathan Blair
+- remove details about histia's internals - (f3aeb56) - Nathan Blair
+- update with webhook server name - (1cc5986) - Nathan Blair
+- initial architectural design of the tenant API server - (18f3dd3) - Nathan Blair
+#### Continuous Integration
+- reorder ci workflow - (f331144) - Nathan Blair
+
+- - -
+
 ## 0.0.1 - 2026-03-20
 #### Bug Fixes
 - grammateus will import those values - (fcb1796) - Nathan Blair
