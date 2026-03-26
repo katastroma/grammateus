@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## 0.0.3 - 2026-03-26
+#### Bug Fixes
+- (**cd**) don't trigger on ignored files - (5ac7119) - Nathan Blair
+
+- - -
+
 ## 0.0.2 - 2026-03-26
 #### Bug Fixes
 - (**cd**) cog handles CD trigger - (465eb41) - Nathan Blair
